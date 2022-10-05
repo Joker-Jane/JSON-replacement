@@ -3,10 +3,61 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 func main() {
-	input := `{
+	input1 := `
+{
+  "@fields": {
+    "Actor": [
+      {
+        "ID": "howard@fluencysecurity.com",
+        "Type": 5
+      }
+    ],
+    "CreationTime": "2022-08-29T20:57:06",
+    "ModifiedProperties": [
+      {
+        "Name": "AssignedLicense",
+        "NewValue": "[]",
+        "OldValue": "[\r\n  \"[SkuName=O365_BUSINESS_PREMIUM, AccountId=11111, SkuId=f245ecc8-75af-4f8e-b61f-27d8114de5f3, DisabledPlans=[]]\"\r\n]"
+      },
+      {
+        "Name": "Included Updated Properties",
+        "NewValue": "AssignedLicense, AssignedPlan",
+        "OldValue": ""
+      }
+    ],
+    "ObjectId": "emily@fluencysecurity.com",
+    "Operation": "Update user.",
+    "Target": [
+      {
+        "ID": "User",
+        "Type": 2
+      },
+      {
+        "ID": "emily@fluencysecurity.com",
+        "Type": 5
+      }
+    ],
+    "TargetContextId": "22222",
+    "UserId": "howard@fluencysecurity.com",
+    "UserKey": "123456789@fluencysecurity.com"
+  },
+  "@source": "Audit.AzureActiveDirectory",
+  "@timestamp": 1661806626000,
+  "@sender": "office365",
+  "@message": "Operation: Update user. associated with: howard@fluencysecurity.com",
+  "@parser": "Office365Adjustments",
+  "@parserVersion": "20210804-1",
+  "@type": "event"
+}
+`
+
+	input2 :=
+		`
+{
   "@message": "Provider \"Environment\" is Started. \r\n\r\nDetails: \r\n\tProviderName=Environment\r\n\tNewProviderState=Started\r\n\r\n\tSequenceNumber=5\r\n\r\n\tHostName=ConsoleHost\r\n\tHostVersion=5.1.17763.2268\r\n\tHostId=902fd6a9-91b6-433e-9990-9395e9104b91\r\n\tHostApplication=powershell.exe -WindowStyle Hidden -nop -c \r\n\tEngineVersion=\r\n\tRunspaceId=\r\n\tPipelineId=\r\n\tCommandName=\r\n\tCommandType=\r\n\tScriptName=\r\n\tCommandPath=\r\n\tCommandLine=",
   "@facility": "user",
   "@level": "notice",
@@ -43,44 +94,69 @@ func main() {
 }
 `
 
-	var root map[string]interface{}
-	err := json.Unmarshal([]byte(input), &root)
+	input3 := `
+{
+  "@fields": {
+    "Actor": [
+      {
+        "ID": "howard@fluencysecurity.com",
+        "Type": 5
+      }
+    ]
+  }
+}
+`
+
+	input1 = input1
+	input2 = input2
+	input3 = input3
+
+	var m map[string]interface{}
+	err := json.Unmarshal([]byte(input1), &m)
 	if err != nil {
-		fmt.Println("Failed to read json file")
-		return
+		panic(err)
 	}
 
-	action := func(root string, val interface{}) {
-		fmt.Println(root+":", val)
-	}
-
-	process("", "", root, action)
+	processMap(m, "fluencysecurity", "TEST", "@fields.Actor.ID", true)
 }
 
-func process(root string, key string, val interface{}, action func(root string, val interface{})) {
-	if root != "" && key != "" {
-		root += "."
-	}
-	root += key
-
-	switch val.(type) {
-	case string, bool, float64:
-		action(root, val)
+func processCollection(k string, v interface{}, from string, to string, field string, isGlobal bool) {
+	switch v.(type) {
+	case map[string]interface{}:
+		processMap(v.(map[string]interface{}), from, to, field, isGlobal)
 	case []interface{}:
-		iterateSlice(root, val.([]interface{}), action)
-	default:
-		iterateMap(root, val.(map[string]interface{}), action)
+		processList(v.([]interface{}), k, from, to, field, isGlobal)
 	}
 }
 
-func iterateMap(root string, group map[string]interface{}, action func(root string, val interface{})) {
-	for key, val := range group {
-		process(root, key, val, action)
+func processMap(m map[string]interface{}, from string, to string, field string, isGlobal bool) {
+	path := strings.SplitN(field, ".", 2)
+
+	for k, v := range m {
+		if isGlobal || k == path[0] {
+			switch v.(type) {
+			case string:
+				m[k] = strings.Replace(v.(string), from, to, -1)
+				fmt.Println(field, k, m[k])
+			default:
+				if isGlobal {
+					processCollection(k, v, from, to, "", isGlobal)
+				} else {
+					processCollection(k, v, from, to, path[1], isGlobal)
+				}
+			}
+		}
 	}
 }
 
-func iterateSlice(root string, slice []interface{}, action func(root string, val interface{})) {
-	for _, val := range slice {
-		process(root, "", val, action)
+func processList(l []interface{}, k string, from string, to string, field string, isGlobal bool) {
+	for i, v := range l {
+		switch v.(type) {
+		case string:
+			l[i] = strings.Replace(v.(string), from, to, -1)
+			fmt.Println(field, k, l[i])
+		default:
+			processCollection(k, v, from, to, field, isGlobal)
+		}
 	}
 }
