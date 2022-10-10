@@ -6,6 +6,14 @@ import (
 	"strings"
 )
 
+type Rule struct {
+	Order       int    `json:"order"`
+	Type        string `json:"type"`
+	FieldName   string `json:"field-name"`
+	Original    string `json:"original"`
+	Replacement string `json:"replacement"`
+}
+
 func main() {
 	input1 := `
 {
@@ -107,17 +115,49 @@ func main() {
 }
 `
 
+	rule := `
+[
+	{
+		"order": 1,
+		"type": "global",
+		"original": "fluencysecurity",
+		"replacement": "alphacorp"
+	},
+	{
+		"order": 2,
+		"type": "per-field",
+		"field-name": "@fields.UserId",
+		"original": "howard",
+		"replacement": "bob"
+	}
+]
+`
+
 	input1 = input1
 	input2 = input2
 	input3 = input3
+	rule = rule
 
-	var m map[string]interface{}
-	err := json.Unmarshal([]byte(input1), &m)
-	if err != nil {
-		panic(err)
+	var m interface{}
+	_ = json.Unmarshal([]byte(input1), &m)
+
+	var rules []Rule
+	_ = json.Unmarshal([]byte(rule), &rules)
+
+	for _, r := range rules {
+		var isGlobal bool
+		if r.Type == "per-field" {
+			isGlobal = false
+		} else if r.Type == "global" {
+			isGlobal = true
+		} else {
+			panic("Invalid type '" + r.Type + "'")
+		}
+		processCollection("", m, r.Original, r.Replacement, r.FieldName, isGlobal)
 	}
 
-	processMap(m, "fluencysecurity", "TEST", "@fields.Actor.ID", true)
+	result, _ := json.Marshal(m)
+	fmt.Println(string(result))
 }
 
 func processCollection(k string, v interface{}, from string, to string, field string, isGlobal bool) {
@@ -125,7 +165,7 @@ func processCollection(k string, v interface{}, from string, to string, field st
 	case map[string]interface{}:
 		processMap(v.(map[string]interface{}), from, to, field, isGlobal)
 	case []interface{}:
-		processList(v.([]interface{}), k, from, to, field, isGlobal)
+		processArray(v.([]interface{}), k, from, to, field, isGlobal)
 	}
 }
 
@@ -137,7 +177,7 @@ func processMap(m map[string]interface{}, from string, to string, field string, 
 			switch v.(type) {
 			case string:
 				m[k] = strings.Replace(v.(string), from, to, -1)
-				fmt.Println(field, k, m[k])
+				//fmt.Println(field, k, m[k])
 			default:
 				if isGlobal {
 					processCollection(k, v, from, to, "", isGlobal)
@@ -149,12 +189,12 @@ func processMap(m map[string]interface{}, from string, to string, field string, 
 	}
 }
 
-func processList(l []interface{}, k string, from string, to string, field string, isGlobal bool) {
+func processArray(l []interface{}, k string, from string, to string, field string, isGlobal bool) {
 	for i, v := range l {
 		switch v.(type) {
 		case string:
 			l[i] = strings.Replace(v.(string), from, to, -1)
-			fmt.Println(field, k, l[i])
+			//fmt.Println(field, k, l[i])
 		default:
 			processCollection(k, v, from, to, field, isGlobal)
 		}
