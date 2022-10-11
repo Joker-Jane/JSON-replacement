@@ -1,0 +1,15 @@
+[
+  {
+    "order": 1,
+    "type": "global",
+    "original": "fluencysecurity",
+    "replacement": "alphacorp"
+  },
+  {
+    "order": 2,
+    "type": "per-field",
+    "field-name": "@fields.UserId",
+    "original": "howard",
+    "replacement": "bob"
+  }
+]
