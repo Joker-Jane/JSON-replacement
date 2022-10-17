@@ -8,8 +8,8 @@
   {
     "order": 2,
     "type": "per-field",
-    "field-name": "b.b5",
-    "original": "test2",
+    "field-name": "b.b2",
+    "original": "test",
     "replacement": "pass"
   }
 ]

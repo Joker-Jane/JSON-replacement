@@ -255,7 +255,9 @@ func processMap(m map[string]interface{}, from string, to string, field string, 
 		if found {
 			switch v.(type) {
 			case string:
-				m[k] = strings.Replace(v.(string), from, to, -1)
+				if next == "" {
+					m[k] = strings.Replace(v.(string), from, to, -1)
+				}
 			default:
 				process(k, v, from, to, next, isGlobal)
 			}
@@ -268,7 +270,9 @@ func processArray(a []interface{}, k string, from string, to string, field strin
 	for i, v := range a {
 		switch v.(type) {
 		case string:
-			a[i] = strings.Replace(v.(string), from, to, -1)
+			if k == "" {
+				a[i] = strings.Replace(v.(string), from, to, -1)
+			}
 		default:
 			process(k, v, from, to, field, isGlobal)
 		}
