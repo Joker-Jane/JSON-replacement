@@ -72,6 +72,11 @@ func main() {
 
 	flag.Parse()
 
+	// Clean paths to standard format
+	*inputPath = filepath.Clean(*inputPath)
+	*outputPath = filepath.Clean(*outputPath)
+
+	// Record start time
 	startTime = time.Now()
 
 	// Check if all arguments are specified
@@ -79,7 +84,7 @@ func main() {
 		log.Fatal("Usage: ./json_replace -i input -o output -c config")
 	}
 
-	// Unnecessary
+	// Obsolete
 	/*
 		// Check if input and output types match
 		if filepath.Ext(*inputPath) != filepath.Ext(*outputPath) {

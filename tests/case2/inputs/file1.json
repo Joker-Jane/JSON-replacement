@@ -2,7 +2,7 @@
   "@fields": {
     "Actor": [
       {
-        "ID": "howard@fluencysecurity.com",
+        "ID": "howard@alphacorp.com",
         "Type": 5
       }
     ],
@@ -19,7 +19,7 @@
         "OldValue": ""
       }
     ],
-    "ObjectId": "emily@fluencysecurity.com",
+    "ObjectId": "emily@alphacorp.com",
     "Operation": "Update user.",
     "Target": [
       {
@@ -27,19 +27,19 @@
         "Type": 2
       },
       {
-        "ID": "emily@fluencysecurity.com",
+        "ID": "emily@alphacorp.com",
         "Type": 5
       }
     ],
     "TargetContextId": "22222",
-    "UserId": "howard@fluencysecurity.com",
-    "UserKey": "123456789@fluencysecurity.com"
+    "UserId": "bob@alphacorp.com",
+    "UserKey": "123456789@alphacorp.com"
   },
-  "@source": "Audit.AzureActiveDirectory",
-  "@timestamp": 1661806626000,
-  "@sender": "office365",
-  "@message": "Operation: Update user. associated with: howard@fluencysecurity.com",
+  "@message": "Operation: Update user. associated with: howard@alphacorp.com",
   "@parser": "Office365Adjustments",
   "@parserVersion": "20210804-1",
+  "@sender": "office365",
+  "@source": "Audit.AzureActiveDirectory",
+  "@timestamp": 1661806626000,
   "@type": "event"
 }

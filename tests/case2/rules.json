@@ -1,0 +1,15 @@
+[
+  {
+    "order": 1,
+    "type": "global",
+    "original": "fluencysecurity",
+    "replacement": "alphacorp"
+  },
+  {
+    "order": 2,
+    "type": "per-field",
+    "field-name": "b.b4",
+    "original": "test2",
+    "replacement": "pass"
+  }
+]

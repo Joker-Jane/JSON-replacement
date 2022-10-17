@@ -1,4 +1,4 @@
-{"id":1,"isx2":"no","isx5":"no","isprime":"no","isnum":"yes","numstr":"1","odd":true,"divisors":1}
+{"id":1,"isx2":"no","isx5":"no","isprime":"no","isnum":"no","numstr":"1","odd":true,"divisors":1}
 {"id":2,"isx2":"yes","isx5":"no","isprime":"yes","isnum":"yes","numstr":"2","even":true,"divisors":2}
 {"id":3,"isx2":"no","isx5":"no","isprime":"yes","isnum":"yes","numstr":"3","odd":true,"divisors":2}
 {"id":4,"isx2":"yes","isx5":"no","isprime":"no","isnum":"yes","numstr":"4","even":true,"divisors":3}

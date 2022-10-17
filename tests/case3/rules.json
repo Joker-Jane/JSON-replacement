@@ -1,0 +1,9 @@
+[
+  {
+    "order": 1,
+    "type": "per-field",
+    "field-name": "isnum",
+    "original": "no",
+    "replacement": "yes"
+  }
+]

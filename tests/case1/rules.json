@@ -13,7 +13,7 @@
     "replacement": "bob"
   },
   {
-    "order": 2,
+    "order": 3,
     "type": "per-field",
     "field-name": "@fields.UserId",
     "original": "howard",
