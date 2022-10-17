@@ -11,5 +11,12 @@
     "field-name": "@fields.UserId",
     "original": "howard",
     "replacement": "bob"
+  },
+  {
+    "order": 2,
+    "type": "per-field",
+    "field-name": "@fields.UserId",
+    "original": "howard",
+    "replacement": "bob"
   }
 ]
