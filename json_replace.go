@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,27 +24,39 @@ type Rule struct {
 	Replacement string `json:"replacement"`
 }
 
-// Paths
+// Flags
 var inputPath *string
 var outputPath *string
 var configPath *string
 var lineByLine *bool
+var maxRoutines *int
 
 // The list of all rules
 var rules []Rule
 
-// File counter and start time
+// Assigned files
+var assignCounter int
+
+// Processed files
 var fileCounter int
+
+// Record start time
 var startTime time.Time
+
+// Lock for updating file counter
+var lock sync.Mutex
 
 /*
 This program reads file(s) containing JSON records, and redacts or replaces the
 private / client information in each based on some predefined parameters.
 
 -i, -o, and -c flags must be specified.
+-l and -r flags are optional.
 
 Reading multiple JSON objects line-by-line is supported by specifying -l flag.
 Note that a single JSON object in multiple lines is not supported if line-by-line mode is enabled.
+
+The program is running in concurrency by default.
 
 Usage:
 
@@ -61,7 +74,10 @@ Flags:
 		Set the path to the config file. The file must be a json file.
 
 	-l
-		Read multiple json objects line by line.
+		Read multiple json objects line by line. Default: false
+
+	-r [number of routines]
+		Set the maximum number of routines running simultaneously. Default: 10
 */
 func main() {
 	// Config and parse flags
@@ -69,6 +85,7 @@ func main() {
 	outputPath = flag.String("o", "", "output path")
 	configPath = flag.String("c", "", "config path")
 	lineByLine = flag.Bool("l", false, "line-by-line mode")
+	maxRoutines = flag.Int("r", 10, "maximum routines")
 
 	flag.Parse()
 
@@ -81,7 +98,11 @@ func main() {
 
 	// Check if all arguments are specified
 	if *inputPath == "" || *configPath == "" || *outputPath == "" {
-		log.Fatal("Usage: ./json_replace -i input -o output -c config")
+		log.Fatal("Usage: ./json_replace -i input -o output -c config [-l] [-r]")
+	}
+
+	if *maxRoutines <= 0 {
+		log.Fatal("Error: Maximum number of routines must be greater than 0")
 	}
 
 	// Obsolete
@@ -117,21 +138,28 @@ func main() {
 		}
 	}
 
-	// Read and parse config file
+	// Read config file
 	rule, err := os.ReadFile(*configPath)
 	if err != nil {
 		log.Fatal("Error: Cannot read config file '" + *configPath + "'")
 	}
 
+	// Parse config file
 	err = json.Unmarshal(rule, &rules)
 	if err != nil {
 		log.Fatal("Error: Config file must be in the format of arrays of rule json objects")
 	}
 
+	// Limit the max number of goroutines running simultaneously
+	ch := make(chan int, *maxRoutines)
+
 	// Walk through and process the input file tree
 	err = filepath.WalkDir(*inputPath, func(path string, d fs.DirEntry, err error) error {
 		if !d.IsDir() {
-			handleFile(path)
+			// Assign the file and start a routine if the buffer is not full
+			assignCounter++
+			ch <- 1
+			go startRoutine(path, ch)
 		}
 		return err
 	})
@@ -139,7 +167,20 @@ func main() {
 		log.Fatal("Error: Failed to walk through the input directory")
 	}
 
+	// Wait until all files are processed
+	for assignCounter != fileCounter {
+	}
+
 	log.Printf("Success: Processed %d file(s) in %.4f second(s)\n", fileCounter, time.Since(startTime).Seconds())
+}
+
+// Start a goroutine
+func startRoutine(filePath string, ch chan int) {
+	handleFile(filePath)
+	// Lock the fileCounter to ensure synchronization
+	lock.Lock()
+	fileCounter += <-ch
+	lock.Unlock()
 }
 
 // Handle input json file
@@ -191,8 +232,6 @@ func handleFile(filePath string) {
 	if err != nil {
 		log.Fatal("Error: Cannot write to '" + target + "'")
 	}
-
-	fileCounter++
 }
 
 // Handle a single JSON object
