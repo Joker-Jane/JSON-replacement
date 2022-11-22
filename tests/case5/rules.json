@@ -1,0 +1,10 @@
+[
+  {
+    "order": 1,
+    "type": "timestamp",
+    "field-name": "timestamp",
+    "max-records": 8,
+    "duration": 10,
+    "start-ms": 100000000
+  }
+]

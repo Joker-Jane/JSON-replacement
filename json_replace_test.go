@@ -66,3 +66,26 @@ func TestLineByLine(t *testing.T) {
 		t.Fatal("Test Case 3 Failed: Actual output and expected output do not match")
 	}
 }
+
+// Test multiple files in a directory
+func TestTimestamp(t *testing.T) {
+	inputPath := "tests/case5/inputs"
+	outputPath := "tests/case5/outputs"
+	outputExpectedPath := "tests/case5/outputs_expected"
+	configPath := "tests/case5/rules.json"
+	os.Args = []string{"json_replace", "-i", inputPath, "-o", outputPath, "-c", configPath}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	main()
+
+	_ = filepath.WalkDir(outputPath, func(path string, d fs.DirEntry, err error) error {
+		if !d.IsDir() {
+			actual, _ := os.ReadFile(path)
+			target := strings.Replace(path, outputPath, outputExpectedPath, 1)
+			expected, _ := os.ReadFile(target)
+			if bytes.Compare(actual, expected) != 0 {
+				t.Fatal("Test Case 5 Failed: Actual output and expected output do not match")
+			}
+		}
+		return err
+	})
+}

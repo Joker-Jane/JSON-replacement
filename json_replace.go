@@ -17,11 +17,15 @@ import (
 
 // Rule struct represents a rule object
 type Rule struct {
-	Order       int    `json:"order"`
-	Type        string `json:"type"`
-	FieldName   string `json:"field-name"`
-	Original    string `json:"original"`
-	Replacement string `json:"replacement"`
+	Order       int     `json:"order"`
+	Type        string  `json:"type"`
+	FieldName   string  `json:"field-name"`
+	Original    string  `json:"original"`
+	Replacement string  `json:"replacement"`
+	Duration    int64   `json:"duration"`
+	MaxSamples  int64   `json:"max-records"`
+	Time        float64 `json:"start-ms"`
+	Index       int64
 }
 
 // Flags
@@ -32,7 +36,7 @@ var lineByLine *bool
 var maxRoutines *int
 
 // The list of all rules
-var rules []Rule
+var rules []*Rule
 
 // Assigned files
 var assignCounter int
@@ -105,19 +109,6 @@ func main() {
 		log.Fatal("Error: Maximum number of routines must be greater than 0")
 	}
 
-	// Obsolete
-	/*
-		// Check if input and output types match
-		if filepath.Ext(*inputPath) != filepath.Ext(*outputPath) {
-			log.Fatal("Error: Input and output paths must either be both files or folders")
-		}
-
-		// Check if input and output types are json or directory
-		if filepath.Ext(*inputPath) != ".json" && filepath.Ext(*inputPath) != "" {
-			log.Fatal("Error: Input and output paths must be either files or folders")
-		}
-	*/
-
 	// Check if input path exists
 	_, err := os.Stat(*inputPath)
 	if err != nil {
@@ -148,6 +139,13 @@ func main() {
 	err = json.Unmarshal(rule, &rules)
 	if err != nil {
 		log.Fatal("Error: Config file must be in the format of arrays of rule json objects")
+	}
+
+	// Initiate start time for replay if not specified
+	for _, r := range rules {
+		if r.Time == 0 {
+			r.Time = float64(time.Now().UnixMilli())
+		}
 	}
 
 	// Limit the max number of goroutines running simultaneously
@@ -255,6 +253,8 @@ func handleJSON(input []byte) ([]byte, error) {
 			process("", m, r.Original, r.Replacement, r.FieldName, false)
 		case "global":
 			process("", m, r.Original, r.Replacement, r.FieldName, true)
+		case "timestamp":
+			processReplay("", m, r.FieldName, r.Duration, r.MaxSamples, &r.Time, &r.Index)
 		default:
 			log.Fatal("Error: Invalid type '" + r.Type + "'")
 		}
@@ -316,4 +316,46 @@ func processArray(a []interface{}, k string, from string, to string, field strin
 			process(k, v, from, to, field, isGlobal)
 		}
 	}
+}
+
+// Process replay
+func processReplay(k string, v interface{}, field string, duration int64, samples int64, time *float64, index *int64) {
+	switch v.(type) {
+	case map[string]interface{}:
+		processReplayMap(v.(map[string]interface{}), field, duration, samples, time, index)
+	case []interface{}:
+		processReplayArray(v.([]interface{}), k, field, duration, samples, time, index)
+	}
+}
+
+// Process replay maps
+func processReplayMap(m map[string]interface{}, field string, duration int64, samples int64, time *float64, index *int64) {
+	k, next, _ := strings.Cut(field, ".")
+	if next == "" {
+		lock.Lock()
+		cur := *time + calculateIncrement(*index, duration, samples)
+		m[k] = int64(cur)
+		*time = cur
+		*index++
+		lock.Unlock()
+	} else {
+		for k, v := range m {
+			processReplay(k, v, field, duration, samples, time, index)
+		}
+	}
+}
+
+// Process replay arrays
+func processReplayArray(a []interface{}, k string, field string, duration int64, samples int64, time *float64, index *int64) {
+	for _, v := range a {
+		processReplay(k, v, field, duration, samples, time, index)
+	}
+}
+
+// Calculate the increment of a record by integration
+func calculateIncrement(i int64, duration int64, samples int64) float64 {
+	var k = float64(samples) / float64(duration)
+	var fa = float64(i-1) * k
+	var fb = float64(i) * k
+	return fb - fa
 }
