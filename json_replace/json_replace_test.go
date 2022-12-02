@@ -2,7 +2,6 @@ package json_replace
 
 import (
 	"bytes"
-	"flag"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,13 +11,14 @@ import (
 
 // Test a single file with standard input
 func TestSingleFile(t *testing.T) {
-	inputPath := "tests/case1/input.json"
-	outputPath := "tests/case1/output.json"
-	outputExpectedPath := "tests/case1/output_expected.json"
-	configPath := "tests/case1/rules.json"
-	os.Args = []string{"json_replace", "-i", inputPath, "-o", outputPath, "-c", configPath}
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	main()
+	inputPath := "../tests/case1/input.json"
+	outputPath := "../tests/case1/output.json"
+	outputExpectedPath := "../tests/case1/output_expected.json"
+	rulePath := "../tests/case1/rules.json"
+
+	cfg := NewDefaultConfig(inputPath, outputPath, rulePath)
+	replace := NewJSONReplace(cfg)
+	replace.Exec()
 
 	actual, _ := os.ReadFile(outputPath)
 	expected, _ := os.ReadFile(outputExpectedPath)
@@ -29,13 +29,14 @@ func TestSingleFile(t *testing.T) {
 
 // Test multiple files in a directory
 func TestDirectory(t *testing.T) {
-	inputPath := "tests/case2/inputs"
-	outputPath := "tests/case2/outputs"
-	outputExpectedPath := "tests/case2/outputs_expected"
-	configPath := "tests/case2/rules.json"
-	os.Args = []string{"json_replace", "-i", inputPath, "-o", outputPath, "-c", configPath}
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	main()
+	inputPath := "../tests/case2/inputs"
+	outputPath := "../tests/case2/outputs"
+	outputExpectedPath := "../tests/case2/outputs_expected"
+	rulePath := "../tests/case2/rules.json"
+
+	cfg := NewDefaultConfig(inputPath, outputPath, rulePath)
+	replace := NewJSONReplace(cfg)
+	replace.Exec()
 
 	_ = filepath.WalkDir(outputPath, func(path string, d fs.DirEntry, err error) error {
 		if !d.IsDir() {
@@ -52,13 +53,14 @@ func TestDirectory(t *testing.T) {
 
 // Test a single file in line-by-line mode
 func TestLineByLine(t *testing.T) {
-	inputPath := "tests/case3/input.txt"
-	outputPath := "tests/case3/output.txt"
-	outputExpectedPath := "tests/case3/output_expected.txt"
-	configPath := "tests/case3/rules.json"
-	os.Args = []string{"json_replace", "-i", inputPath, "-o", outputPath, "-c", configPath, "-l"}
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	main()
+	inputPath := "../tests/case3/input.txt"
+	outputPath := "../tests/case3/output.txt"
+	outputExpectedPath := "../tests/case3/output_expected.txt"
+	rulePath := "../tests/case3/rules.json"
+
+	cfg := NewConfig(inputPath, outputPath, rulePath, true, 10)
+	replace := NewJSONReplace(cfg)
+	replace.Exec()
 
 	actual, _ := os.ReadFile(outputPath)
 	expected, _ := os.ReadFile(outputExpectedPath)
@@ -69,13 +71,14 @@ func TestLineByLine(t *testing.T) {
 
 // Test multiple files in a directory
 func TestTimestamp(t *testing.T) {
-	inputPath := "tests/case5/inputs"
-	outputPath := "tests/case5/outputs"
-	outputExpectedPath := "tests/case5/outputs_expected"
-	configPath := "tests/case5/rules.json"
-	os.Args = []string{"json_replace", "-i", inputPath, "-o", outputPath, "-c", configPath}
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	main()
+	inputPath := "../tests/case5/inputs"
+	outputPath := "../tests/case5/outputs"
+	outputExpectedPath := "../tests/case5/outputs_expected"
+	rulePath := "../tests/case5/rules.json"
+
+	cfg := NewDefaultConfig(inputPath, outputPath, rulePath)
+	replace := NewJSONReplace(cfg)
+	replace.Exec()
 
 	_ = filepath.WalkDir(outputPath, func(path string, d fs.DirEntry, err error) error {
 		if !d.IsDir() {
