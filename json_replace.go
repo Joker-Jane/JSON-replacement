@@ -1,4 +1,4 @@
-package main
+package json_replace
 
 import (
 	"bytes"
@@ -177,8 +177,8 @@ func startRoutine(filePath string, ch chan int) {
 	handleFile(filePath)
 	// Lock the fileCounter to ensure synchronization
 	lock.Lock()
+	defer lock.Unlock()
 	fileCounter += <-ch
-	lock.Unlock()
 }
 
 // Handle input json file
@@ -250,11 +250,11 @@ func handleJSON(input []byte) ([]byte, error) {
 	for _, r := range rules {
 		switch r.Type {
 		case "per-field":
-			process("", m, r.Original, r.Replacement, r.FieldName, false)
+			process("", m, *r)
 		case "global":
-			process("", m, r.Original, r.Replacement, r.FieldName, true)
+			process("", m, *r)
 		case "timestamp":
-			processReplay("", m, r.FieldName, r.Duration, r.MaxSamples, &r.Time, &r.Index)
+			processReplay("", m, r)
 		default:
 			log.Fatal("Error: Invalid type '" + r.Type + "'")
 		}
@@ -266,89 +266,90 @@ func handleJSON(input []byte) ([]byte, error) {
 }
 
 // Process non-string elements
-func process(k string, v interface{}, from string, to string, field string, isGlobal bool) {
+func process(k string, v interface{}, r Rule) {
 	switch v.(type) {
 	case map[string]interface{}:
-		processMap(v.(map[string]interface{}), from, to, field, isGlobal)
+		processMap(v.(map[string]interface{}), r)
 	case []interface{}:
-		processArray(v.([]interface{}), k, from, to, field, isGlobal)
+		processArray(v.([]interface{}), k, r)
 	}
 }
 
 // Process maps
-func processMap(m map[string]interface{}, from string, to string, field string, isGlobal bool) {
+func processMap(m map[string]interface{}, r Rule) {
 	// If global rule applies, iterate every element in the map
 	// If not, check if the particular field exists
-	if isGlobal {
+	if r.Type == "global" {
 		for k, v := range m {
 			switch v.(type) {
 			case string:
-				m[k] = strings.Replace(v.(string), from, to, -1)
+				m[k] = strings.Replace(v.(string), r.Original, r.Replacement, -1)
 			default:
-				process(k, v, from, to, "", isGlobal)
+				process(k, v, r)
 			}
 		}
 	} else {
-		k, next, _ := strings.Cut(field, ".")
+		k, next, _ := strings.Cut(r.FieldName, ".")
 		v, found := m[k]
 		if found {
 			switch v.(type) {
 			case string:
 				if next == "" {
-					m[k] = strings.Replace(v.(string), from, to, -1)
+					m[k] = strings.Replace(v.(string), r.Original, r.Replacement, -1)
 				}
 			default:
-				process(k, v, from, to, next, isGlobal)
+				r.FieldName = next
+				process(k, v, r)
 			}
 		}
 	}
 }
 
 // Process arrays
-func processArray(a []interface{}, k string, from string, to string, field string, isGlobal bool) {
+func processArray(a []interface{}, k string, r Rule) {
 	for i, v := range a {
 		switch v.(type) {
 		case string:
 			if k == "" {
-				a[i] = strings.Replace(v.(string), from, to, -1)
+				a[i] = strings.Replace(v.(string), r.Original, r.FieldName, -1)
 			}
 		default:
-			process(k, v, from, to, field, isGlobal)
+			process(k, v, r)
 		}
 	}
 }
 
 // Process replay
-func processReplay(k string, v interface{}, field string, duration int64, samples int64, time *float64, index *int64) {
+func processReplay(k string, v interface{}, r *Rule) {
 	switch v.(type) {
 	case map[string]interface{}:
-		processReplayMap(v.(map[string]interface{}), field, duration, samples, time, index)
+		processReplayMap(v.(map[string]interface{}), r)
 	case []interface{}:
-		processReplayArray(v.([]interface{}), k, field, duration, samples, time, index)
+		processReplayArray(v.([]interface{}), k, r)
 	}
 }
 
 // Process replay maps
-func processReplayMap(m map[string]interface{}, field string, duration int64, samples int64, time *float64, index *int64) {
-	k, next, _ := strings.Cut(field, ".")
+func processReplayMap(m map[string]interface{}, r *Rule) {
+	k, next, _ := strings.Cut(r.FieldName, ".")
 	if next == "" {
 		lock.Lock()
-		cur := *time + calculateIncrement(*index, duration, samples)
+		cur := r.Time + calculateIncrement(r.Index, r.Duration, r.MaxSamples)
 		m[k] = int64(cur)
-		*time = cur
-		*index++
+		r.Time = cur
+		r.Index++
 		lock.Unlock()
 	} else {
 		for k, v := range m {
-			processReplay(k, v, field, duration, samples, time, index)
+			processReplay(k, v, r)
 		}
 	}
 }
 
 // Process replay arrays
-func processReplayArray(a []interface{}, k string, field string, duration int64, samples int64, time *float64, index *int64) {
+func processReplayArray(a []interface{}, k string, r *Rule) {
 	for _, v := range a {
-		processReplay(k, v, field, duration, samples, time, index)
+		processReplay(k, v, r)
 	}
 }
 
