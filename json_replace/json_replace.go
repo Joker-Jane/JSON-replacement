@@ -41,6 +41,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,30 +56,40 @@ type JSONReplace struct {
 	// The list of all rules
 	rules []*Rule
 
-	// Record start time
-	startTime time.Time
-
-	// Assigned files
-	assignCounter int
-
-	// Processed files
-	fileCounter int
-
-	// Lock for updating file counter
-	lock sync.Mutex
+	// Synchronization
+	sync *Sync
 }
 
 // Rule struct represents a rule object
 type Rule struct {
-	Order       int     `json:"order"`
-	Type        string  `json:"type"`
-	FieldName   string  `json:"field-name"`
-	Original    string  `json:"original"`
-	Replacement string  `json:"replacement"`
-	Duration    int64   `json:"duration"`
-	MaxSamples  int64   `json:"max-records"`
-	Time        float64 `json:"start-ms"`
-	Index       int64
+	Order       int    `json:"order"`
+	Type        string `json:"type"`
+	FieldName   string `json:"field-name"`
+	Original    string `json:"original"`
+	Replacement string `json:"replacement"`
+	Duration    int64  `json:"duration"`
+	MaxRecords  int64  `json:"max-records"`
+	StartMs     int64  `json:"start-ms"`
+	replay      Replay
+}
+
+// Replay struct records replay related fields
+type Replay struct {
+	time    float64
+	index   int64
+	records int64
+}
+
+// Sync struct ensures synchronization
+type Sync struct {
+	// Assigned files
+	assignCounter int
+
+	// Processed files
+	processCounter int
+
+	// Lock for updating file counter
+	lock sync.Mutex
 }
 
 // Create a JSONReplace Object
@@ -88,6 +99,7 @@ func NewJSONReplace(config *Config) *JSONReplace {
 		log.Fatal("Usage: ./json_replace -i input -o output -c config [-l] [-r]")
 	}
 
+	// Check if max routines is positive
 	if config.maxRoutines <= 0 {
 		log.Fatal("Error: Maximum number of routines must be greater than 0")
 	}
@@ -118,18 +130,23 @@ func NewJSONReplace(config *Config) *JSONReplace {
 		log.Fatal("Error: Cannot read config file '" + config.rulePath + "'")
 	}
 
+	// Parse config file and store to rules
 	var rules []*Rule
-
-	// Parse config file
 	err = json.Unmarshal(rule, &rules)
 	if err != nil {
 		log.Fatal("Error: Config file must be in the format of arrays of rule json objects")
 	}
 
+	// Sort the rules by order
+	sort.Slice(rules, func(i, j int) bool {
+		return rules[i].Order < rules[j].Order
+	})
+
+	// Construct JSONReplace object
 	replace := &JSONReplace{
-		config:    config,
-		rules:     rules,
-		startTime: time.Now(),
+		config: config,
+		rules:  rules,
+		sync:   new(Sync),
 	}
 
 	return replace
@@ -137,11 +154,17 @@ func NewJSONReplace(config *Config) *JSONReplace {
 
 // Execute
 func (replace *JSONReplace) Exec() {
-	// Initiate start time for replay if not specified
+	// Record start time
+	startTime := time.Now()
+
+	// Initiate time for replay
 	for _, r := range replace.rules {
-		if r.Time == 0 {
-			r.Time = float64(time.Now().UnixMilli())
+		if r.StartMs == 0 {
+			r.replay.time = float64(time.Now().UnixMilli())
+		} else {
+			r.replay.time = float64(r.StartMs)
 		}
+		r.replay.records = r.MaxRecords
 	}
 
 	// Limit the max number of goroutines running simultaneously
@@ -151,7 +174,7 @@ func (replace *JSONReplace) Exec() {
 	err := filepath.WalkDir(replace.config.inputPath, func(path string, d fs.DirEntry, err error) error {
 		if !d.IsDir() {
 			// Assign the file and start a routine if the buffer is not full
-			replace.assignCounter++
+			replace.sync.assignCounter++
 			ch <- 1
 			go replace.startRoutine(path, ch)
 		}
@@ -162,20 +185,22 @@ func (replace *JSONReplace) Exec() {
 	}
 
 	// Wait until all files are processed
-	for replace.assignCounter != replace.fileCounter {
+	for replace.sync.assignCounter != replace.sync.processCounter {
 	}
 
+	// Log output
 	log.Printf("Success: Processed %d file(s) in %.4f second(s)\n",
-		replace.fileCounter, time.Since(replace.startTime).Seconds())
+		replace.sync.processCounter, time.Since(startTime).Seconds())
 }
 
 // Start a goroutine
 func (replace *JSONReplace) startRoutine(filePath string, ch chan int) {
 	replace.handleFile(filePath)
-	// Lock the fileCounter to ensure synchronization
-	replace.lock.Lock()
-	defer replace.lock.Unlock()
-	replace.fileCounter += <-ch
+
+	// Lock the processCounter to ensure synchronization
+	replace.sync.lock.Lock()
+	defer replace.sync.lock.Unlock()
+	replace.sync.processCounter += <-ch
 }
 
 // Handle input json file
@@ -330,12 +355,12 @@ func (replace *JSONReplace) processReplay(k string, v interface{}, r *Rule) {
 func (replace *JSONReplace) processReplayMap(m map[string]interface{}, r *Rule) {
 	k, next, _ := strings.Cut(r.FieldName, ".")
 	if next == "" {
-		replace.lock.Lock()
-		cur := r.Time + replace.calculateIncrement(r.Index, r.Duration, r.MaxSamples)
+		replace.sync.lock.Lock()
+		defer replace.sync.lock.Unlock()
+		cur := r.replay.time + replace.calculateIncrement(r.replay.index, r.Duration, r.replay.records)
 		m[k] = int64(cur)
-		r.Time = cur
-		r.Index++
-		replace.lock.Unlock()
+		r.replay.time = cur
+		r.replay.index++
 	} else {
 		for k, v := range m {
 			replace.processReplay(k, v, r)
@@ -351,8 +376,8 @@ func (replace *JSONReplace) processReplayArray(a []interface{}, k string, r *Rul
 }
 
 // Calculate the increment of a record by integration
-func (replace *JSONReplace) calculateIncrement(i int64, duration int64, samples int64) float64 {
-	var k = float64(samples) / float64(duration)
+func (replace *JSONReplace) calculateIncrement(i int64, duration int64, records int64) float64 {
+	var k = float64(duration) / float64(records)
 	var fa = float64(i-1) * k
 	var fb = float64(i) * k
 	return fb - fa

@@ -2,9 +2,17 @@
   {
     "order": 1,
     "type": "timestamp",
-    "field-name": "timestamp",
+    "field-name": "timestamp1",
     "max-records": 8,
-    "duration": 10,
+    "duration": 16,
+    "start-ms": 100000000
+  },
+  {
+    "order": 1,
+    "type": "timestamp",
+    "field-name": "timestamp2",
+    "max-records": 8,
+    "duration": 4,
     "start-ms": 100000000
   }
 ]

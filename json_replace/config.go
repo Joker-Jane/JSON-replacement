@@ -14,6 +14,10 @@ type Config struct {
 }
 
 func NewConfig(inputPath string, outputPath string, rulePath string, lineByline bool, maxRoutines int) *Config {
+	// Clean paths to standard format
+	inputPath = filepath.Clean(inputPath)
+	outputPath = filepath.Clean(outputPath)
+
 	c := Config{
 		inputPath:   inputPath,
 		outputPath:  outputPath,
@@ -25,14 +29,7 @@ func NewConfig(inputPath string, outputPath string, rulePath string, lineByline 
 }
 
 func NewDefaultConfig(inputPath string, outputPath string, rulePath string) *Config {
-	c := Config{
-		inputPath:   inputPath,
-		outputPath:  outputPath,
-		rulePath:    rulePath,
-		lineByLine:  false,
-		maxRoutines: 10,
-	}
-	return &c
+	return NewConfig(inputPath, outputPath, rulePath, false, 10)
 }
 
 func NewConfigFromConsole() *Config {
@@ -44,10 +41,6 @@ func NewConfigFromConsole() *Config {
 	maxRoutines := flag.Int("r", 10, "maximum routines")
 
 	flag.Parse()
-
-	// Clean paths to standard format
-	*inputPath = filepath.Clean(*inputPath)
-	*outputPath = filepath.Clean(*outputPath)
 
 	return NewConfig(*inputPath, *outputPath, *rulePath, *lineByLine, *maxRoutines)
 }
