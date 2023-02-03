@@ -1,0 +1,30 @@
+[
+  {
+    "position": 1,
+    "output": "stream_1",
+    "conditions": [
+      {
+        "type": "match",
+        "key": "test1",
+        "values": [
+          "t"
+        ],
+        "exclude": false
+      }
+    ]
+  },
+  {
+    "position": 2,
+    "output": "stream_2",
+    "conditions": [
+      {
+        "type": "match",
+        "key": "test2",
+        "values": [
+          "t"
+        ],
+        "exclude": false
+      }
+    ]
+  }
+]

@@ -1,0 +1,4 @@
+{"test1": "f", "test2": "f"}
+{"test1": "f", "test2": "t"}
+{"test1": "t", "test2": "f"}
+{"test1": "t", "test2": "t"}

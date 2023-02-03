@@ -1,0 +1,46 @@
+[
+  {
+    "position": 1,
+    "output": "stream_1",
+    "conditions": [
+      {
+        "type": "match",
+        "key": "@sender",
+        "values": [
+          "73.212.239.153"
+        ],
+        "exclude": false
+      },
+      {
+        "type": "match",
+        "key": "@type",
+        "values": [
+          "event"
+        ],
+        "exclude": false
+      }
+    ]
+  },
+  {
+    "position": 2,
+    "output": "stream_2",
+    "conditions": [
+      {
+        "type": "match",
+        "key": "@customer",
+        "values": [
+          "FluencyDemo"
+        ],
+        "exclude": false
+      },
+      {
+        "type": "match",
+        "key": "@fields.Operation",
+        "values": [
+          "Set-AdminAuditLogConfig"
+        ],
+        "exclude": true
+      }
+    ]
+  }
+]

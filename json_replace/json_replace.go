@@ -2,13 +2,17 @@
 This program reads file(s) containing JSON records, and redacts or replaces the
 private / client information in each based on some predefined parameters.
 
--i, -o, and -c flags must be specified.
--l and -r flags are optional.
+-i, -o, and -r flags must be specified.
+-l and -n flags are optional.
+
+The input path and output path can be either a file or a directory.
+The rule path must be a JSON file in valid rule format.
 
 Reading multiple JSON objects line-by-line is supported by specifying -l flag.
 Note that a single JSON object in multiple lines is not supported if line-by-line mode is enabled.
 
-The program is running in concurrency by default.
+The program is running concurrently by default.
+This can be disabled by setting -n flag to 1.
 
 Usage:
 
@@ -17,18 +21,18 @@ Usage:
 Flags:
 
 	-i input_path
-		Set the path to the input file or directory. Path to a file must be a json file.
+		Set the path to the input file or directory.
 
 	-o output_path
-		Set the path to the out file or directory. Path to a file must be a json file.
+		Set the path to the output file or directory.
 
-	-c config_path
-		Set the path to the config file. The file must be a json file.
+	-r rule_path
+		Set the path to the rule file.
 
 	-l
 		Read multiple json objects line by line. Default: false
 
-	-r [number of routines]
+	-n [number of routines]
 		Set the maximum number of routines running simultaneously. Default: 10
 */
 package json_replace
@@ -96,7 +100,7 @@ type Sync struct {
 func NewJSONReplace(config *Config) *JSONReplace {
 	// Check if all arguments are specified
 	if config.inputPath == "" || config.rulePath == "" || config.outputPath == "" {
-		log.Fatal("Usage: ./json_replace -i input -o output -c config [-l] [-r]")
+		log.Fatal("Usage: ./json_replace -i input -o output -r rule [-l] [-n routines]")
 	}
 
 	// Check if max routines is positive
@@ -120,21 +124,21 @@ func NewJSONReplace(config *Config) *JSONReplace {
 		if errors.Is(err, os.ErrNotExist) {
 			log.Fatal("Error: Config file '" + config.rulePath + "' not found")
 		} else {
-			log.Fatal("Error: Cannot read config file '" + config.rulePath + "'")
+			log.Fatal("Error: Cannot read rule file '" + config.rulePath + "'")
 		}
 	}
 
 	// Read config file
 	rule, err := os.ReadFile(config.rulePath)
 	if err != nil {
-		log.Fatal("Error: Cannot read config file '" + config.rulePath + "'")
+		log.Fatal("Error: Cannot read rule file '" + config.rulePath + "'")
 	}
 
 	// Parse config file and store to rules
 	var rules []*Rule
 	err = json.Unmarshal(rule, &rules)
 	if err != nil {
-		log.Fatal("Error: Config file must be in the format of arrays of rule json objects")
+		log.Fatal("Error: Rule file must be in the format of arrays of rule json objects")
 	}
 
 	// Sort the rules by order
