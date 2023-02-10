@@ -1,8 +1,6 @@
 package main
 
-import (
-	"github.com/Joker-Jane/JSON-replacement/json_select"
-)
+import "github.com/Joker-Jane/JSON-replacement/json_select"
 
 func main() {
 	/*

@@ -1,0 +1,6 @@
+{"test1": "prefix1", "test2": "f"}
+{"test1": "prefix2", "test2": "1suffix"}
+{"test1": "t", "test2": "2suffix"}
+{"test1": "regex1"}
+{"test1": "regex2"}
+{"test1": "regex3"}

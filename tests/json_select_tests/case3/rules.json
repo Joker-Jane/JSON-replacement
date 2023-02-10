@@ -1,0 +1,44 @@
+[
+  {
+    "position": 1,
+    "output": "stream_1",
+    "conditions": [
+      {
+        "type": "prefix",
+        "key": "test1",
+        "values": [
+          "prefix"
+        ],
+        "exclude": false
+      }
+    ]
+  },
+  {
+    "position": 2,
+    "output": "stream_2",
+    "conditions": [
+      {
+        "type": "suffix",
+        "key": "test2",
+        "values": [
+          "suffix"
+        ],
+        "exclude": false
+      }
+    ]
+  },
+  {
+    "position": 3,
+    "output": "stream_3",
+    "conditions": [
+      {
+        "type": "regex",
+        "key": "test1",
+        "values": [
+          "^regex[12]$"
+        ],
+        "exclude": false
+      }
+    ]
+  }
+]

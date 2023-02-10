@@ -35,13 +35,15 @@ Flags:
 package json_select
 
 import (
-	"bytes"
+	"bufio"
 	"encoding/json"
 	"errors"
 	"io/fs"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,6 +61,9 @@ type JSONSelect struct {
 
 	// Synchronization
 	sync *Sync
+
+	// Store file pointers to output files
+	outputMap *map[string]*os.File
 }
 
 // Rule struct represents a rule object
@@ -139,12 +144,39 @@ func NewJSONSelect(config *Config) *JSONSelect {
 
 	// Construct JSONSelect object
 	s := &JSONSelect{
-		config: config,
-		rules:  rules,
-		sync:   new(Sync),
+		config:    config,
+		rules:     rules,
+		sync:      new(Sync),
+		outputMap: &map[string]*os.File{},
 	}
 
 	return s
+}
+
+// Create output files from rules and store file pointers to a map
+func (s *JSONSelect) CreateOutputFiles() {
+	err := os.MkdirAll(s.config.outputPath, 0700)
+	if err != nil {
+		log.Fatal("Error: Failed to create directory '" + s.config.outputPath + "'")
+	}
+
+	s.CreateOutputFile("default")
+	s.CreateOutputFile("drop")
+	for _, r := range s.rules {
+		s.CreateOutputFile(r.Output)
+	}
+}
+
+// Create a single output file
+func (s *JSONSelect) CreateOutputFile(output string) {
+	if (*s.outputMap)[output] == nil {
+		p := filepath.Join(s.config.outputPath, output)
+		f, err := os.Create(p)
+		if err != nil {
+			log.Fatal("Error: Failed to create file '" + p + "'")
+		}
+		(*s.outputMap)[output] = f
+	}
 }
 
 // Execute
@@ -152,16 +184,16 @@ func (s *JSONSelect) Exec() {
 	// Record start time
 	startTime := time.Now()
 
+	// Create outputs files
+	s.CreateOutputFiles()
+
 	// Limit the max number of goroutines running simultaneously
 	ch := make(chan int, s.config.maxRoutines)
 
 	// Walk through and process the input file tree
 	err := filepath.WalkDir(s.config.inputPath, func(path string, d fs.DirEntry, err error) error {
 		if !d.IsDir() {
-			// Assign the file and start a routine if the buffer is not full
-			s.sync.assignCounter++
-			ch <- 1
-			go s.startRoutine(path, ch)
+			s.handleFile(path, ch)
 		}
 		return err
 	})
@@ -169,18 +201,44 @@ func (s *JSONSelect) Exec() {
 		log.Fatal("Error: Failed to walk through the input directory")
 	}
 
+	// TODO need a better solution
 	// Wait until all files are processed
 	for s.sync.assignCounter != s.sync.processCounter {
 	}
 
 	// Log output
-	log.Printf("Success: Processed %d file(s) in %.4f second(s)\n",
+	log.Printf("Success: Processed %d records(s) in %.4f second(s)\n",
 		s.sync.processCounter, time.Since(startTime).Seconds())
 }
 
-// Start a goroutine
-func (s *JSONSelect) startRoutine(filePath string, ch chan int) {
-	s.handleFile(filePath)
+// Handle input json file
+func (s *JSONSelect) handleFile(filePath string, ch chan int) {
+	// Open the input file
+	f, err := os.Open(filePath)
+	defer f.Close()
+	if err != nil {
+		log.Fatal("Error: Cannot read input file '" + filePath + "'")
+	}
+
+	// Scan the input file line by line
+	scanner := bufio.NewScanner(f)
+	line := 1
+	for scanner.Scan() {
+		bytes := scanner.Bytes()
+		// Skip if the line is empty
+		if len(bytes) == 0 {
+			continue
+		}
+		s.sync.assignCounter++
+		ch <- 1
+		s.startRoutine(&bytes, ch, filePath, line)
+		line++
+	}
+}
+
+// Start a goroutine to handle a single record
+func (s *JSONSelect) startRoutine(input *[]byte, ch chan int, filePath string, line int) {
+	s.handleJSON(input, filePath, line)
 
 	// Lock the processCounter to ensure synchronization
 	s.sync.lock.Lock()
@@ -188,56 +246,32 @@ func (s *JSONSelect) startRoutine(filePath string, ch chan int) {
 	s.sync.processCounter += <-ch
 }
 
-// Handle input json file
-func (s *JSONSelect) handleFile(filePath string) {
-	// Read input file
-	input, err := os.ReadFile(filePath)
-	if err != nil {
-		log.Fatal("Error: Cannot read input file '" + filePath + "'")
-	}
-
-	// split the input by \n, process each line, and append to result
-	inputs := bytes.Split(input, []byte("\n"))
-	for l, i := range inputs {
-		err := s.handleJSON(filePath, i)
-		if err != nil {
-			log.Fatal("Error: Line " + strconv.Itoa(l+1) + " of '" + filePath + "' is not in valid JSON format")
-		}
-	}
-}
-
 // Handle a single JSON object
-func (s *JSONSelect) handleJSON(filePath string, input []byte) error {
-	// Return if the input is empty
-	if len(input) == 0 {
-		return nil
-	}
-
+func (s *JSONSelect) handleJSON(input *[]byte, filePath string, line int) {
 	// Parse input json
 	var v interface{}
-	err := json.Unmarshal(input, &v)
+	err := json.Unmarshal(*input, &v)
 	if err != nil {
-		return err
+		log.Fatal("Error: Line " + strconv.Itoa(line) + " of '" + filePath + "' is not in valid JSON format")
 	}
 
 	// Apply every rule on files, stop if match any rule
 	for _, r := range s.rules {
-		// If all rules are met, write to specific output
+		// If all conditions are met, write to specific output
 		if s.processRule(v, *r) {
-			s.write(filePath, &input, r.Output)
-			return nil
+			s.write(input, r.Output)
+			return
 		}
 	}
 
-	// If no rule is met, send to drop
-	s.write(filePath, &input, "drop")
-	return nil
+	// If no rule is met, send to default
+	s.write(input, "default")
 }
 
 // Return if all conditions in the rule is met
 func (s *JSONSelect) processRule(v interface{}, r Rule) bool {
 	for _, c := range r.Conditions {
-		if !s.processCondition(v, *c) {
+		if !s.processCondition(v, c) {
 			return false
 		}
 	}
@@ -245,12 +279,12 @@ func (s *JSONSelect) processRule(v interface{}, r Rule) bool {
 }
 
 // Return if the condition is met
-func (s *JSONSelect) processCondition(v interface{}, c Condition) bool {
+func (s *JSONSelect) processCondition(v interface{}, c *Condition) bool {
 	return s.process("", v, c) != c.Exclude
 }
 
 // Process non-string elements
-func (s *JSONSelect) process(k string, v interface{}, c Condition) bool {
+func (s *JSONSelect) process(k string, v interface{}, c *Condition) bool {
 	switch v.(type) {
 	case map[string]interface{}:
 		return s.processMap(v.(map[string]interface{}), c)
@@ -261,19 +295,14 @@ func (s *JSONSelect) process(k string, v interface{}, c Condition) bool {
 }
 
 // Process maps
-func (s *JSONSelect) processMap(m map[string]interface{}, c Condition) bool {
+func (s *JSONSelect) processMap(m map[string]interface{}, c *Condition) bool {
 	k, next, _ := strings.Cut(c.Key, ".")
 	v, found := m[k]
 	if found {
 		switch v.(type) {
 		case string:
 			if next == "" {
-				for _, value := range c.Values {
-					if v.(string) == value {
-						return true
-					}
-				}
-				return false
+				return s.test(v.(string), c)
 			}
 		default:
 			c.Key = next
@@ -284,17 +313,12 @@ func (s *JSONSelect) processMap(m map[string]interface{}, c Condition) bool {
 }
 
 // Process arrays
-func (s *JSONSelect) processArray(a []interface{}, k string, c Condition) bool {
+func (s *JSONSelect) processArray(a []interface{}, k string, c *Condition) bool {
 	for _, v := range a {
 		switch v.(type) {
 		case string:
 			if k == "" {
-				for _, value := range c.Values {
-					if v.(string) == value {
-						return true
-					}
-				}
-				return false
+				return s.test(v.(string), c)
 			}
 		default:
 			return s.process(k, v, c)
@@ -303,30 +327,46 @@ func (s *JSONSelect) processArray(a []interface{}, k string, c Condition) bool {
 	return false
 }
 
-func (s *JSONSelect) write(filePath string, json *[]byte, output string) {
-	// Get target output path
-	target := strings.Replace(filePath, s.config.inputPath, s.config.outputPath, 1)
-
-	err := os.MkdirAll(target, 0700)
-	if err != nil {
-		log.Fatal("Error: Failed to create directory '" + target + "'")
+func (s *JSONSelect) test(v string, c *Condition) bool {
+	for _, value := range c.Values {
+		switch c.Type {
+		case "match":
+			if v == value {
+				return true
+			}
+			break
+		case "prefix":
+			if strings.HasPrefix(v, value) {
+				return true
+			}
+			break
+		case "suffix":
+			if strings.HasSuffix(v, value) {
+				return true
+			}
+			break
+		case "exist":
+			return true
+		case "regex":
+			// Match regex pattern, parsing error is ignored and return false
+			m, _ := regexp.MatchString(value, v)
+			if m {
+				return true
+			}
+			break
+		default:
+			log.Fatal("Error: Invalid condition type '" + c.Type + "'")
+		}
 	}
+	return false
+}
 
-	if output == "" {
-		output = "default"
-	}
-
-	// Get directory of output file
-	target += string(filepath.Separator) + output
-
-	f, err := os.OpenFile(target, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatal(err)
-	}
+func (s *JSONSelect) write(json *[]byte, output string) {
+	f := (*s.outputMap)[output]
 
 	*json = append(*json, byte('\n'))
 
 	if _, err := f.Write(*json); err != nil {
-		log.Fatal(err)
+		log.Fatal("Error: Failed to write to '" + path.Join(s.config.outputPath, output) + "'")
 	}
 }
