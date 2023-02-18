@@ -37,3 +37,16 @@ func TestSelectTypes(t *testing.T) {
 	s := json_select.NewJSONSelect(cfg)
 	s.Exec()
 }
+
+/*
+// Test massive input with standard input
+func TestSelectMassive(t *testing.T) {
+	inputPath := "json_select_tests/case4/10m_dns.json"
+	outputPath := "json_select_tests/case4/output"
+	rulePath := "json_select_tests/case4/rules.json"
+
+	cfg := json_select.NewDefaultConfig(inputPath, outputPath, rulePath)
+	s := json_select.NewJSONSelect(cfg)
+	s.Exec()
+}
+*/

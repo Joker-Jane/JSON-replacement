@@ -59,9 +59,6 @@ type JSONSelect struct {
 	// The list of all rules
 	rules []*Rule
 
-	// Synchronization
-	sync *Sync
-
 	// Store file pointers to output files
 	outputMap *map[string]*os.File
 }
@@ -78,18 +75,6 @@ type Condition struct {
 	Key     string   `json:"key"`
 	Values  []string `json:"values"`
 	Exclude bool     `json:"exclude"`
-}
-
-// Sync struct ensures synchronization
-type Sync struct {
-	// Assigned files
-	assignCounter int
-
-	// Processed files
-	processCounter int
-
-	// Lock for updating file counter
-	lock sync.Mutex
 }
 
 // Create a NewJSONSelect Object
@@ -146,7 +131,6 @@ func NewJSONSelect(config *Config) *JSONSelect {
 	s := &JSONSelect{
 		config:    config,
 		rules:     rules,
-		sync:      new(Sync),
 		outputMap: &map[string]*os.File{},
 	}
 
@@ -179,10 +163,24 @@ func (s *JSONSelect) CreateOutputFile(output string) {
 	}
 }
 
+// Close output files
+func (s *JSONSelect) CloseOutputFiles() {
+	for output, f := range *s.outputMap {
+		err := f.Close()
+		if err != nil {
+			log.Fatal("Error: Failed to close file '" +
+				filepath.Join(s.config.outputPath, output) + "'")
+		}
+	}
+}
+
 // Execute
 func (s *JSONSelect) Exec() {
 	// Record start time
 	startTime := time.Now()
+
+	// Record record count
+	count := 0
 
 	// Create outputs files
 	s.CreateOutputFiles()
@@ -190,10 +188,13 @@ func (s *JSONSelect) Exec() {
 	// Limit the max number of goroutines running simultaneously
 	ch := make(chan int, s.config.maxRoutines)
 
+	// Handle synchronization
+	var wg sync.WaitGroup
+
 	// Walk through and process the input file tree
 	err := filepath.WalkDir(s.config.inputPath, func(path string, d fs.DirEntry, err error) error {
 		if !d.IsDir() {
-			s.handleFile(path, ch)
+			count += s.handleFile(path, ch, &wg)
 		}
 		return err
 	})
@@ -201,18 +202,19 @@ func (s *JSONSelect) Exec() {
 		log.Fatal("Error: Failed to walk through the input directory")
 	}
 
-	// TODO need a better solution
-	// Wait until all files are processed
-	for s.sync.assignCounter != s.sync.processCounter {
-	}
+	// Wait until all routines finish
+	wg.Wait()
+
+	// Close output files
+	s.CloseOutputFiles()
 
 	// Log output
 	log.Printf("Success: Processed %d records(s) in %.4f second(s)\n",
-		s.sync.processCounter, time.Since(startTime).Seconds())
+		count, time.Since(startTime).Seconds())
 }
 
 // Handle input json file
-func (s *JSONSelect) handleFile(filePath string, ch chan int) {
+func (s *JSONSelect) handleFile(filePath string, ch chan int, wg *sync.WaitGroup) int {
 	// Open the input file
 	f, err := os.Open(filePath)
 	defer f.Close()
@@ -220,30 +222,43 @@ func (s *JSONSelect) handleFile(filePath string, ch chan int) {
 		log.Fatal("Error: Cannot read input file '" + filePath + "'")
 	}
 
-	// Scan the input file line by line
 	scanner := bufio.NewScanner(f)
-	line := 1
+
+	// Record line number
+	line := 0
+
+	// Record record count
+	count := 0
+
+	// Scan the input file line by line
 	for scanner.Scan() {
-		bytes := scanner.Bytes()
+		line++
 		// Skip if the line is empty
-		if len(bytes) == 0 {
+		if len(scanner.Bytes()) == 0 {
 			continue
 		}
-		s.sync.assignCounter++
+
+		// Copy from scanner to a new slice to allocate memory
+		bytes := make([]byte, len(scanner.Bytes()))
+		copy(bytes, scanner.Bytes())
+
+		// Increment count, occupy a channel, add to wait group, and start the routine
+		count++
 		ch <- 1
-		s.startRoutine(&bytes, ch, filePath, line)
-		line++
+		wg.Add(1)
+		go s.startRoutine(&bytes, ch, filePath, line, wg)
 	}
+	// return count of processed records
+	return count
 }
 
 // Start a goroutine to handle a single record
-func (s *JSONSelect) startRoutine(input *[]byte, ch chan int, filePath string, line int) {
+func (s *JSONSelect) startRoutine(input *[]byte, ch chan int, filePath string, line int, wg *sync.WaitGroup) {
 	s.handleJSON(input, filePath, line)
 
-	// Lock the processCounter to ensure synchronization
-	s.sync.lock.Lock()
-	defer s.sync.lock.Unlock()
-	s.sync.processCounter += <-ch
+	// Finish the routine
+	wg.Done()
+	<-ch
 }
 
 // Handle a single JSON object
@@ -252,7 +267,11 @@ func (s *JSONSelect) handleJSON(input *[]byte, filePath string, line int) {
 	var v interface{}
 	err := json.Unmarshal(*input, &v)
 	if err != nil {
-		log.Fatal("Error: Line " + strconv.Itoa(line) + " of '" + filePath + "' is not in valid JSON format")
+		if errors.Is(&json.SyntaxError{}, err) {
+			log.Fatal("Error: Line " + strconv.Itoa(line) + " of '" + filePath + "' is not in valid JSON format")
+		} else {
+			log.Fatal(err)
+		}
 	}
 
 	// Apply every rule on files, stop if match any rule
@@ -327,6 +346,7 @@ func (s *JSONSelect) processArray(a []interface{}, k string, c *Condition) bool 
 	return false
 }
 
+// Test if the field matches the condition
 func (s *JSONSelect) test(v string, c *Condition) bool {
 	for _, value := range c.Values {
 		switch c.Type {
@@ -361,12 +381,17 @@ func (s *JSONSelect) test(v string, c *Condition) bool {
 	return false
 }
 
+// Write to the output file
 func (s *JSONSelect) write(json *[]byte, output string) {
+	// Get the file pointer from map
 	f := (*s.outputMap)[output]
 
+	// Append a new line character
 	*json = append(*json, byte('\n'))
 
-	if _, err := f.Write(*json); err != nil {
+	// Write to file, internally thread safe
+	_, err := f.Write(*json)
+	if err != nil {
 		log.Fatal("Error: Failed to write to '" + path.Join(s.config.outputPath, output) + "'")
 	}
 }
