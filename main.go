@@ -1,15 +1,11 @@
 package main
 
-import "github.com/Joker-Jane/JSON-replacement/json_select"
+import (
+	"github.com/Joker-Jane/JSON-replacement/json_flat"
+)
 
 func main() {
-	/*
-		cfg := json_replace.NewConfigFromConsole()
-		replace := json_replace.NewJSONReplace(cfg)
-		replace.Exec()
-	*/
-
-	cfg := json_select.NewConfigFromConsole()
-	s := json_select.NewJSONSelect(cfg)
+	cfg := json_flat.NewConfigFromConsole()
+	s := json_flat.NewJSONFlat(cfg)
 	s.Exec()
 }
